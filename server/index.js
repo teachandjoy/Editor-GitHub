@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import fs from 'fs';
 import { initializeDatabase } from './database.js';
 import { auditMiddleware } from './middleware/audit.js';
 import { loginLimiter } from './middleware/rateLimit.js';
@@ -15,6 +18,9 @@ import identitiesRouter from './routes/identities.js';
 import backupRouter from './routes/backup.js';
 import auditLogRouter from './routes/auditLog.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -22,7 +28,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Audit middleware — attaches req.audit() helper
+// Audit middleware
 app.use(auditMiddleware);
 
 // Request logging
@@ -31,7 +37,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Health check / heartbeat
+// Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -39,7 +45,7 @@ app.get('/api/health', (_req, res) => {
 // Rate limit on login
 app.use('/api/sessions/login', loginLimiter);
 
-// Routes
+// API Routes
 app.use('/api/users', usersRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/offers', offersRouter);
@@ -53,29 +59,20 @@ app.use('/api/backup', backupRouter);
 app.use('/api/restore', backupRouter);
 app.use('/api/audit-log', auditLogRouter);
 
+// Serve frontend
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // Global error handler
 app.use((err, _req, res, _next) => {
   console.error('[Server Error]', err.stack || err.message);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
-
-import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Servir frontend
-const distPath = path.join(__dirname, '../dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(distPath, 'index.html'));
-    }
-  });
-}
 
 // Initialize database and start server
 initializeDatabase();
